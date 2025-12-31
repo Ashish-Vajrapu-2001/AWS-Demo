@@ -1,0 +1,71 @@
+{
+  "Comment": "Gold Layer Orchestrator: Dims -> Facts -> Aggregates",
+  "StartAt": "Initialize",
+  "States": {
+    "Initialize": {
+      "Type": "Pass",
+      "Next": "LoadDimensions"
+    },
+    "LoadDimensions": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "gold_build_dimensions",
+        "Arguments": {
+          "--pipeline_run_id.$": "$.pipeline_run_id",
+          "--silver_db": "silver",
+          "--gold_bucket": "myntra-clv-gold"
+        }
+      },
+      "Next": "LoadFacts",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "NotifyFailure"
+        }
+      ]
+    },
+    "LoadFacts": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "gold_build_facts",
+        "Arguments": {
+          "--pipeline_run_id.$": "$.pipeline_run_id",
+          "--silver_db": "silver",
+          "--gold_bucket": "myntra-clv-gold"
+        }
+      },
+      "Next": "LoadAggregates",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "NotifyFailure"
+        }
+      ]
+    },
+    "LoadAggregates": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "gold_build_aggregates",
+        "Arguments": {
+          "--pipeline_run_id.$": "$.pipeline_run_id",
+          "--gold_bucket": "myntra-clv-gold"
+        }
+      },
+      "End": true,
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "NotifyFailure"
+        }
+      ]
+    },
+    "NotifyFailure": {
+      "Type": "Fail",
+      "Error": "GoldLayerFailed",
+      "Cause": "One of the Gold Layer Glue Jobs failed."
+    }
+  }
+}
