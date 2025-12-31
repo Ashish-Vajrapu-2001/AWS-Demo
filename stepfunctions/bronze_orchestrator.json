@@ -1,0 +1,138 @@
+{
+  "Comment": "Bronze Layer Ingestion Orchestrator (Metadata Driven)",
+  "StartAt": "GetActiveTables",
+  "States": {
+    "GetActiveTables": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:{{PLACEHOLDER_REGION}}:{{PLACEHOLDER_ACCOUNT_ID}}:function:get_table_load_order",
+      "ResultPath": "$.tables",
+      "Next": "ProcessTables"
+    },
+    "ProcessTables": {
+      "Type": "Map",
+      "ItemsPath": "$.tables",
+      "MaxConcurrency": 5,
+      "Parameters": {
+        "table_id.$": "$$.Map.Item.Value.table_id",
+        "schema_name.$": "$$.Map.Item.Value.schema_name",
+        "table_name.$": "$$.Map.Item.Value.table_name",
+        "primary_key_columns.$": "$$.Map.Item.Value.primary_key_columns",
+        "initial_load_completed.$": "$$.Map.Item.Value.initial_load_completed",
+        "last_sync_version.$": "$$.Map.Item.Value.last_sync_version",
+        "source_system.$": "$$.Map.Item.Value.source_system",
+        "execution_id.$": "$$.Execution.Name",
+        "bucket_name": "{{PLACEHOLDER_BUCKET_NAME}}",
+        "db_secret_arn": "{{PLACEHOLDER_DB_SECRET_ARN}}"
+      },
+      "Iterator": {
+        "StartAt": "CheckLoadType",
+        "States": {
+          "CheckLoadType": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.initial_load_completed",
+                "BooleanEquals": false,
+                "Next": "InitialLoadJob"
+              },
+              {
+                "Variable": "$.initial_load_completed",
+                "BooleanEquals": true,
+                "Next": "IncrementalCDCJob"
+              }
+            ],
+            "Default": "InitialLoadJob"
+          },
+          "InitialLoadJob": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::glue:startJobRun.sync",
+            "Parameters": {
+              "JobName": "initial_load_dynamic",
+              "Arguments": {
+                "--execution_id.$": "$.execution_id",
+                "--table_id.$": "$.table_id",
+                "--schema_name.$": "$.schema_name",
+                "--table_name.$": "$.table_name",
+                "--primary_key_columns.$": "$.primary_key_columns",
+                "--source_system.$": "$.source_system",
+                "--bucket_name.$": "$.bucket_name",
+                "--db_secret_arn.$": "$.db_secret_arn",
+                "--job-bookmark-option": "job-bookmark-enable"
+              }
+            },
+            "ResultPath": "$.job_result",
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "Next": "MarkFailed"
+              }
+            ],
+            "Next": "MarkInitialSuccess"
+          },
+          "IncrementalCDCJob": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::glue:startJobRun.sync",
+            "Parameters": {
+              "JobName": "incremental_cdc_dynamic",
+              "Arguments": {
+                "--execution_id.$": "$.execution_id",
+                "--table_id.$": "$.table_id",
+                "--schema_name.$": "$.schema_name",
+                "--table_name.$": "$.table_name",
+                "--primary_key_columns.$": "$.primary_key_columns",
+                "--source_system.$": "$.source_system",
+                "--bucket_name.$": "$.bucket_name",
+                "--db_secret_arn.$": "$.db_secret_arn",
+                "--last_sync_version.$": "$.last_sync_version",
+                "--job-bookmark-option": "job-bookmark-enable"
+              }
+            },
+            "ResultPath": "$.job_result",
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "Next": "MarkFailed"
+              }
+            ],
+            "Next": "MarkIncrementalSuccess"
+          },
+          "MarkInitialSuccess": {
+            "Type": "Task",
+            "Resource": "arn:aws:lambda:{{PLACEHOLDER_REGION}}:{{PLACEHOLDER_ACCOUNT_ID}}:function:update_table_metadata",
+            "Parameters": {
+              "table_id.$": "$.table_id",
+              "status": "SUCCESS",
+              "execution_id.$": "$.execution_id",
+              "records_loaded": 100, 
+              "mark_initial_complete": true
+            },
+            "End": true
+          },
+          "MarkIncrementalSuccess": {
+            "Type": "Task",
+            "Resource": "arn:aws:lambda:{{PLACEHOLDER_REGION}}:{{PLACEHOLDER_ACCOUNT_ID}}:function:update_table_metadata",
+            "Parameters": {
+              "table_id.$": "$.table_id",
+              "status": "SUCCESS",
+              "execution_id.$": "$.execution_id",
+              "records_loaded": 50 
+            },
+            "End": true
+          },
+          "MarkFailed": {
+            "Type": "Task",
+            "Resource": "arn:aws:lambda:{{PLACEHOLDER_REGION}}:{{PLACEHOLDER_ACCOUNT_ID}}:function:update_table_metadata",
+            "Parameters": {
+              "table_id.$": "$.table_id",
+              "status": "FAILED",
+              "execution_id.$": "$.execution_id",
+              "error_message": "Glue Job Failed"
+            },
+            "End": true
+          }
+        }
+      },
+      "End": true
+    }
+  }
+}
