@@ -1,0 +1,66 @@
+{
+  "Comment": "Silver Layer Orchestrator - Triggers Glue Jobs for Active Tables",
+  "StartAt": "GetActiveTables",
+  "States": {
+    "GetActiveTables": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:123456789012:function:get-silver-tables-config",
+      "Parameters": {
+        "status": "active"
+      },
+      "ResultPath": "$.tables",
+      "Next": "ProcessTables"
+    },
+    "ProcessTables": {
+      "Type": "Map",
+      "ItemsPath": "$.tables",
+      "MaxConcurrency": 5,
+      "Iterator": {
+        "StartAt": "RunGlueTransformation",
+        "States": {
+          "RunGlueTransformation": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::glue:startJobRun.sync",
+            "Parameters": {
+              "JobName": "silver_transform_dynamic",
+              "Arguments": {
+                "--table_id.$": "$.table_id",
+                "--pipeline_run_id.$": "$$.Execution.Name",
+                "--db_secret_name": "myntra/clv/postgres",
+                "--bronze_bucket": "myntra-clv-bronze"
+              }
+            },
+            "Catch": [
+              {
+                "ErrorEquals": ["States.ALL"],
+                "Next": "LogFailure"
+              }
+            ],
+            "Next": "UpdateMetadata"
+          },
+          "UpdateMetadata": {
+            "Type": "Task",
+            "Resource": "arn:aws:lambda:us-east-1:123456789012:function:update_silver_metadata",
+            "Parameters": {
+              "table_id.$": "$.table_id",
+              "status": "SUCCESS",
+              "pipeline_run_id.$": "$$.Execution.Name"
+            },
+            "End": true
+          },
+          "LogFailure": {
+             "Type": "Task",
+             "Resource": "arn:aws:lambda:us-east-1:123456789012:function:update_silver_metadata",
+             "Parameters": {
+               "table_id.$": "$.table_id",
+               "status": "FAILED",
+               "pipeline_run_id.$": "$$.Execution.Name"
+             },
+             "End": true
+          }
+        }
+      },
+      "End": true
+    }
+  }
+}
