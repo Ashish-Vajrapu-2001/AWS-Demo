@@ -1,0 +1,21 @@
+{
+    "Name": "glue_conn_source_db",
+    "Description": "Connection to Source Database (Azure SQL via VPN)",
+    "ConnectionType": "JDBC",
+    "MatchCriteria": [],
+    "ConnectionProperties": {
+        "JDBC_CONNECTION_URL": "jdbc:sqlserver://src-server.database.windows.net:1433;databaseName=ERPDB",
+        "JDBC_ENFORCE_SSL": "true",
+        "SECRET_ID_NAME": "{{PLACEHOLDER_DB_SECRET_ARN}}"
+    },
+    "PhysicalConnectionRequirements": {
+        "SubnetIdList": [
+            "{{PLACEHOLDER_SUBNET_ID_1}}",
+            "{{PLACEHOLDER_SUBNET_ID_2}}"
+        ],
+        "SecurityGroupIdList": [
+            "{{PLACEHOLDER_SECURITY_GROUP_ID}}"
+        ],
+        "AvailabilityZone": "{{PLACEHOLDER_AZ}}"
+    }
+}
